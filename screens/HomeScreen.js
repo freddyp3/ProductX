@@ -9,6 +9,14 @@ export default function HomeScreen({ navigation }) {
         title="Create New Group"
         onPress={() => navigation.navigate('CreateGroup')}
       />
+      <Button
+        title="Current Groups"
+        onPress={() => navigation.navigate('CurrentGroups')}
+      />
+      <Button
+        title="Unlocked Groups"
+        onPress={() => navigation.navigate('UnlockedGroups')}
+      />
     </View>
   );
 }
