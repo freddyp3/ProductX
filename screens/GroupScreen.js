@@ -1,627 +1,736 @@
-import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  Button,
-  Image,
-  FlatList,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  ScrollView,
-  Dimensions,
-  StatusBar,
-} from "react-native";
-import * as ImagePicker from "expo-image-picker";
-import { useGroups } from "../context/GroupContext";
-
-const { width } = Dimensions.get("window");
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, Button, Image, FlatList, Alert, TouchableOpacity, StyleSheet, TextInput, ScrollView, Modal, ActivityIndicator } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { Video } from 'expo-av';
+import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
+import { Audio } from 'expo-av';
+import { useGroups } from '../context/GroupContext';
+import LockedMediaPlaceholder from '../components/LockedMediaPlaceholder';
+import { Ionicons } from '@expo/vector-icons';
+import { Linking } from 'react-native';
 
 export default function GroupScreen({ route, navigation }) {
-  const { groupName, unlockDate, isUnlocked } = route.params || {};
-  const { groups, addPhotoToGroup } = useGroups();
+  const { groupId, isUnlocked } = route.params;
+  const { groups, unlockedGroups, addPhotoToGroup, removePhotoFromGroup, unlockGroup } = useGroups();
+  const [password, setPassword] = useState('');
+  const [showCamera, setShowCamera] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
+  const [loading, setLoading] = useState(false);
+  const [lastAddedPhoto, setLastAddedPhoto] = useState(null);
+  const [showUndoButton, setShowUndoButton] = useState(false);
+  const cameraRef = useRef(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isCameraMode, setIsCameraMode] = useState(true); // true for photo, false for video
+  
+  const group = isUnlocked 
+    ? unlockedGroups.find(g => g.id === groupId)
+    : groups.find(g => g.id === groupId);
 
-  // Find the current group from our groups context
-  const currentGroup = groups.find((g) => g.name === groupName);
+  const media = group?.media || [];
 
-  // Ensure mediaItems is properly initialized
-  const mediaItems = currentGroup?.mediaItems || [];
-
-  // Log the current group for debugging
   useEffect(() => {
-    if (currentGroup) {
-      console.log(`Found group: ${currentGroup.name}`);
-      console.log(`Media items count: ${mediaItems.length}`);
-    } else {
-      console.log(`Group not found: ${groupName}`);
+    (async () => {
+      // Request audio recording permissions for video
+      if (!isCameraMode) {
+        const audioStatus = await Audio.requestPermissionsAsync();
+        if (audioStatus.status !== 'granted') {
+          Alert.alert(
+            'Audio Permission Required',
+            'Please grant microphone access to record videos with sound.'
+          );
+        }
+      }
+    })();
+  }, [isCameraMode]);
+
+  const handleCameraPress = async () => {
+    if (!permission?.granted) {
+      const newPermission = await requestPermission();
+      if (!newPermission.granted) {
+        Alert.alert(
+          'Camera Permission Required',
+          'Please grant camera access in your phone settings to take photos.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() }
+          ]
+        );
+        return;
+      }
     }
-  }, [currentGroup, groupName, mediaItems]);
-
-  // Extract photo and video URIs
-  const photos = mediaItems
-    .filter((item) => item && item.type === "photo" && item.uri)
-    .map((item) => item.uri);
-  const videos = mediaItems
-    .filter((item) => item && item.type === "video" && item.uri)
-    .map((item) => item.uri);
-  const photoCount = photos.length || currentGroup?.photoCount || 0;
-  const videoCount = videos.length || currentGroup?.videoCount || 0;
-
-  // State for member filtering
-  const [selectedMember, setSelectedMember] = useState(null);
-  const [newComment, setNewComment] = useState("");
-  const [comments, setComments] = useState([]);
-
-  // Mock members data (in a real app, this would come from the group data)
-  const members = currentGroup?.members || [];
-  if (!members.includes("You")) {
-    members.unshift("You");
-  }
-
-  // Member colors mapping
-  const memberColors = {
-    You: "#1ED860",
-    Alex: "#1ED860",
-    Reagan: "#1D6F1A",
-    Freddy: "#25603A",
-    Marco: "#2A6B7B",
+    setShowCamera(true);
   };
 
-  const pickImage = async () => {
-    // Request permission
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  const handleUnlock = () => {
+    if (password === '1234') {
+      unlockGroup(groupId);
+      navigation.goBack();
+      Alert.alert('Success', 'Group unlocked successfully!');
+    } else {
+      Alert.alert('Error', 'Incorrect password');
+      setPassword('');
+    }
+  };
 
-    if (status !== "granted") {
-      alert("Sorry, we need camera roll permissions to make this work!");
+  const handleAddMedia = async () => {
+    try {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
+    if (status !== 'granted') {
+      alert('Sorry, we need camera roll permissions to make this work!');
       return;
     }
 
-    useEffect(() => {
-      (async () => {
-        const { status } = await Camera.requestCameraPermissionsAsync();
-        setCameraPermission(status === "granted");
-      })();
-    }, []);
+    const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+      allowsEditing: true,
+      quality: 1,
+    });
 
-    if (!result.canceled) {
-      // Determine if it's a video based on the mimeType
-      const asset = result.assets[0];
-      const isVideo = asset.type && asset.type.startsWith("video");
-
-      // Save the media to the group
-      addPhotoToGroup(currentGroup.id, asset.uri, isVideo ? "video" : "photo");
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const asset = result.assets[0];
+        const isVideo = asset.type === 'video';
+        const mediaId = Date.now().toString();
+        await addPhotoToGroup(groupId, asset.uri, isVideo, mediaId);
+        setLastAddedPhoto({ id: mediaId, uri: asset.uri, isVideo });
+        setShowUndoButton(true);
+        setTimeout(() => {
+          setShowUndoButton(false);
+          setLastAddedPhoto(null);
+        }, 5000); // Hide undo button after 5 seconds
+      }
+    } catch (error) {
+      console.error('Error adding media:', error);
+      alert('There was a problem adding your media. Please try again.');
     }
   };
 
-  const handleMemberPress = (member) => {
-    // Toggle selection
-    if (selectedMember === member) {
-      setSelectedMember(null);
-    } else {
-      setSelectedMember(member);
+  const handleUndo = () => {
+    if (lastAddedPhoto) {
+      removePhotoFromGroup(groupId, lastAddedPhoto.id);
+      setLastAddedPhoto(null);
+      setShowUndoButton(false);
     }
   };
 
-  const handleAddComment = () => {
-    if (newComment.trim()) {
-      const newCommentObj = {
-        id: comments.length + 1,
-        text: newComment,
-        user: "You", // In a real app, this would be the current user
-        color: memberColors["You"],
+  const takePhoto = async () => {
+    if (cameraRef.current) {
+      try {
+        setLoading(true);
+        const photo = await cameraRef.current.takePictureAsync();
+        const mediaId = Date.now().toString();
+        await addPhotoToGroup(groupId, photo.uri, false, mediaId);
+        setShowCamera(false);
+        setLastAddedPhoto({ id: mediaId, uri: photo.uri, isVideo: false });
+        setShowUndoButton(true);
+        setTimeout(() => {
+          setShowUndoButton(false);
+          setLastAddedPhoto(null);
+        }, 5000); // Hide undo button after 5 seconds
+      } catch (error) {
+        console.error('Error taking photo:', error);
+        alert('There was a problem taking the photo. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const startRecording = async () => {
+    if (!cameraRef.current) {
+      console.error('Camera ref is not available');
+      return;
+    }
+
+    try {
+      console.log('Starting recording...');
+      setIsRecording(true);
+
+      const options = {
+        maxDuration: 60,
+        quality: '1080p',
+        mute: false
       };
-      setComments([...comments, newCommentObj]);
-      setNewComment("");
+
+      await cameraRef.current.recordAsync(options);
+      console.log('Recording started successfully');
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      Alert.alert('Recording Error', 'Failed to start recording. Please try again.');
+      setIsRecording(false);
     }
   };
 
-  // For debugging - log the photos array
-  useEffect(() => {
-    console.log(`Group ${groupName} has ${photos.length} photos`);
-    console.log(`Media items: ${JSON.stringify(mediaItems.slice(0, 2))}`);
-  }, [photos, groupName, mediaItems]);
+  const stopRecording = async () => {
+    if (!cameraRef.current || !isRecording) {
+      console.log('No active recording to stop');
+      return;
+    }
 
-  // Filter photos by selected member if needed
-  // This is a simplified approach - in a real app, each photo would have an owner field
-  const filteredPhotos = selectedMember
-    ? photos.filter(
-        (_, index) =>
-          index % members.length === members.indexOf(selectedMember),
-      )
-    : photos;
+    try {
+      console.log('Stopping recording...');
+      await cameraRef.current.stopRecording();
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+      Alert.alert('Error', 'Failed to stop recording. Please try again.');
+      setIsRecording(false);
+    }
+  };
 
-  if (isUnlocked) {
-    // View for unlocked groups - show the new design
-    return (
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" />
+  const handleRecordingFinished = async (video) => {
+    try {
+      console.log('Processing recorded video:', video);
+      const asset = {
+        uri: video.uri,
+        type: 'video',
+        name: `video_${Date.now()}.mp4`
+      };
+      
+      await addPhotoToGroup(groupId, asset);
+      console.log('Video added to group successfully');
+    } catch (error) {
+      console.error('Error processing video:', error);
+      Alert.alert('Error', 'Failed to save video. Please try again.');
+    }
+  };
 
+  const handleCameraAction = async () => {
+    if (isCameraMode) {
+      await takePhoto();
+    } else {
+      console.log('Camera action for video, isRecording:', isRecording);
+      if (isRecording) {
+        await stopRecording();
+      } else {
+        await startRecording();
+      }
+    }
+  };
+
+  const renderMediaItem = ({ item }) => {
+    if (!isUnlocked && item.isLocked) {
+      return (
         <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          style={styles.mediaItem}
+          onPress={() => navigation.navigate('MediaView', {
+            mediaId: item.id,
+            groupId,
+            isUnlocked
+          })}
         >
-          <Image
-            source={require("../assets/back-icon.png")}
-            style={styles.backIcon}
-          />
+          <LockedMediaPlaceholder />
         </TouchableOpacity>
+      );
+    }
 
-        <ScrollView style={styles.scrollView}>
-          <View style={styles.content}>
-            {/* Group Name Header */}
-            <View style={styles.groupHeader}>
-              <Text style={styles.groupName}>{groupName} ⭐️️</Text>
+    return (
+      <TouchableOpacity
+        style={styles.mediaItem}
+        onPress={() => navigation.navigate('MediaView', {
+          mediaId: item.id,
+          groupId,
+          isUnlocked
+        })}
+      >
+        {item.isVideo ? (
+          <View style={styles.videoContainer}>
+            <View style={styles.videoPlaceholder}>
+              <Text style={styles.videoIcon}>🎥</Text>
             </View>
-
-            {/* Member Tags */}
-            <View style={styles.membersContainer}>
-              {members.map((member, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.memberTag,
-                    { backgroundColor: memberColors[member] || "#1ED860" },
-                    selectedMember === member && styles.selectedMemberTag,
-                  ]}
-                  onPress={() => handleMemberPress(member)}
-                >
-                  <Text style={styles.memberTagText}>{member}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Photo Grid - First Row */}
-            {filteredPhotos.length > 0 ? (
-              <View style={styles.photoGrid}>
-                {filteredPhotos.slice(0, 4).map((photo, index) => (
-                  <TouchableOpacity
-                    key={`row1-${index}`}
-                    onPress={() => {
-                      if (!currentGroup?.id) {
-                        console.warn(
-                          "No groupId available for photo detail navigation",
-                        );
-                      }
-                      navigation.navigate("PhotoDetail", {
-                        photoUri: photo,
-                        photoDate:
-                          currentGroup?.mediaItems?.[index]?.creationTime ||
-                          new Date().toISOString(),
-                        groupId: currentGroup?.id,
-                      });
-                    }}
-                  >
-                    <Image
-                      source={{ uri: photo }}
-                      style={styles.gridPhoto}
-                      defaultSource={require("../assets/placeholder-image.png")}
-                    />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : (
-              <View style={styles.noPhotosContainer}>
-                <Text style={styles.noPhotosText}>No photos available</Text>
-              </View>
-            )}
-
-            {/* Photo Grid - Second Row with Feature Photo */}
-            {filteredPhotos.length > 4 && (
-              <View style={styles.featureRow}>
-                <TouchableOpacity
-                  onPress={() =>
-                    navigation.navigate("PhotoDetail", {
-                      photoUri: filteredPhotos[4],
-                      photoDate:
-                        currentGroup?.mediaItems?.[4]?.creationTime ||
-                        new Date().toISOString(),
-                      groupId: currentGroup?.id,
-                    })
-                  }
-                >
-                  <Image
-                    source={{ uri: filteredPhotos[4] }}
-                    style={styles.featurePhoto}
-                  />
-                </TouchableOpacity>
-                <View style={styles.smallPhotosContainer}>
-                  {filteredPhotos.slice(5, 9).map((photo, index) => (
-                    <TouchableOpacity
-                      key={`row2-small-${index}`}
-                      onPress={() =>
-                        navigation.navigate("PhotoDetail", {
-                          photoUri: photo,
-                          photoDate:
-                            currentGroup?.mediaItems?.[index + 5]
-                              ?.creationTime || new Date().toISOString(),
-                          groupId: currentGroup?.id,
-                        })
-                      }
-                    >
-                      <Image
-                        source={{ uri: photo }}
-                        style={styles.smallGridPhoto}
-                      />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {/* Photo Grid - Third Row */}
-            {filteredPhotos.length > 9 && (
-              <View style={styles.photoGrid}>
-                {filteredPhotos.slice(9, 13).map((photo, index) => (
-                  <TouchableOpacity
-                    key={`row3-${index}`}
-                    onPress={() =>
-                      navigation.navigate("PhotoDetail", {
-                        photoUri: photo,
-                        photoDate:
-                          currentGroup?.mediaItems?.[index + 9]?.creationTime ||
-                          new Date().toISOString(),
-                        groupId: currentGroup?.id,
-                      })
-                    }
-                  >
-                    <Image source={{ uri: photo }} style={styles.gridPhoto} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            {/* Photo Grid - Fourth Row with varying sizes */}
-            {filteredPhotos.length > 13 && (
-              <View style={styles.lastRow}>
-                <TouchableOpacity
-                  onPress={() =>
-                    navigation.navigate("PhotoDetail", {
-                      photoUri: filteredPhotos[13],
-                      photoDate:
-                        currentGroup?.mediaItems?.[13]?.creationTime ||
-                        new Date().toISOString(),
-                      groupId: currentGroup?.id,
-                    })
-                  }
-                >
-                  <Image
-                    source={{ uri: filteredPhotos[13] }}
-                    style={styles.widePhoto}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() =>
-                    navigation.navigate("PhotoDetail", {
-                      photoUri: filteredPhotos[14],
-                      photoDate:
-                        currentGroup?.mediaItems?.[14]?.creationTime ||
-                        new Date().toISOString(),
-                      groupId: currentGroup?.id,
-                    })
-                  }
-                >
-                  <Image
-                    source={{ uri: filteredPhotos[14] }}
-                    style={styles.widePhoto}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() =>
-                    navigation.navigate("PhotoDetail", {
-                      photoUri: filteredPhotos[15],
-                      photoDate:
-                        currentGroup?.mediaItems?.[15]?.creationTime ||
-                        new Date().toISOString(),
-                      groupId: currentGroup?.id,
-                    })
-                  }
-                >
-                  <Image
-                    source={{ uri: filteredPhotos[15] }}
-                    style={styles.fullWidthPhoto}
-                  />
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Comments Section */}
-            <View style={styles.commentsContainer}>
-              {comments.map((comment, index) => (
-                <View
-                  key={index}
-                  style={[
-                    styles.commentBubble,
-                    { backgroundColor: comment.color },
-                  ]}
-                >
-                  <View style={styles.userIcon}>
-                    <Image
-                      source={require("../assets/user-icon.png")}
-                      style={styles.userIconImage}
-                    />
-                  </View>
-                  <Text style={styles.commentText}>{comment.text}</Text>
-                </View>
-              ))}
-
-              {/* Comment Input */}
-              <View style={styles.commentInputContainer}>
-                <TextInput
-                  style={styles.commentInput}
-                  placeholder="Type your message here"
-                  placeholderTextColor="rgba(17, 17, 17, 0.5)"
-                  value={newComment}
-                  onChangeText={setNewComment}
-                />
-                <TouchableOpacity onPress={handleAddComment}>
-                  <Image
-                    source={require("../assets/send-icon.png")}
-                    style={styles.sendIcon}
-                  />
-                </TouchableOpacity>
-              </View>
+            <View style={styles.playButton}>
+              <Text style={styles.playButtonText}>▶️</Text>
             </View>
           </View>
-        </ScrollView>
+        ) : (
+          <Image source={{ uri: item.uri }} style={styles.mediaPreview} />
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  const CommentItem = ({ comment, onReply, level = 0 }) => {
+    const [showReplyInput, setShowReplyInput] = useState(false);
+    const [replyText, setReplyText] = useState('');
+
+    const handleSubmitReply = () => {
+      if (replyText.trim()) {
+        onReply({
+          text: replyText,
+          parentId: comment.id
+        });
+        setReplyText('');
+        setShowReplyInput(false);
+      }
+    };
+
+    return (
+      <View style={[styles.commentContainer, { marginLeft: level * 20 }]}>
+        <Text style={styles.commentText}>{comment.text}</Text>
+        <Text style={styles.commentTimestamp}>
+          {new Date(comment.timestamp).toLocaleString()}
+        </Text>
+        
+        <TouchableOpacity 
+          style={styles.replyButton}
+          onPress={() => setShowReplyInput(!showReplyInput)}
+        >
+          <Text style={styles.replyButtonText}>Reply</Text>
+        </TouchableOpacity>
+
+        {showReplyInput && (
+          <View style={styles.replyInputContainer}>
+            <TextInput
+              style={styles.replyInput}
+              value={replyText}
+              onChangeText={setReplyText}
+              placeholder="Write a reply..."
+              multiline
+            />
+            <TouchableOpacity 
+              style={styles.submitReplyButton}
+              onPress={handleSubmitReply}
+            >
+              <Text style={styles.submitReplyText}>Send</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {comment.replies?.map(reply => (
+          <CommentItem
+            key={reply.id}
+            comment={reply}
+            onReply={onReply}
+            level={level + 1}
+          />
+        ))}
+      </View>
+    );
+  };
+
+  if (!group) {
+    return (
+      <View style={styles.container}>
+        <Text>Loading group...</Text>
       </View>
     );
   }
 
-  // View for locked groups - only allow adding photos, don't show existing photos
   return (
     <View style={styles.container}>
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => navigation.goBack()}
-      >
-        <Image
-          source={require("../assets/back-icon.png")}
-          style={styles.backIcon}
-        />
-      </TouchableOpacity>
+      <Text style={styles.title}>{group.name}</Text>
+      
+      {!isUnlocked && (
+        <View style={styles.headerContainer}>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity 
+              style={[styles.addButton, styles.cameraButton]} 
+              onPress={handleCameraPress}
+            >
+              <Ionicons name="camera" size={24} color="#fff" />
+              <Text style={styles.addButtonText}>Take Photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.addButton} 
+              onPress={handleAddMedia}
+            >
+              <Ionicons name="images" size={24} color="#fff" />
+              <Text style={styles.addButtonText}>Choose Media</Text>
+            </TouchableOpacity>
+          </View>
 
-      <View style={styles.header}>
-        <Text style={styles.title}>{groupName}</Text>
-        <Text style={styles.unlockDate}>
-          Unlocks on: {new Date(unlockDate).toLocaleDateString()}
-        </Text>
-      </View>
+          <View style={styles.unlockContainer}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Enter password to unlock"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+            <TouchableOpacity 
+              style={styles.unlockButton}
+              onPress={handleUnlock}
+            >
+              <Text style={styles.unlockButtonText}>Unlock</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+      
+      <FlatList
+        data={media}
+        numColumns={3}
+        keyExtractor={item => item.id}
+        renderItem={renderMediaItem}
+        ListEmptyComponent={() => (
+          <Text style={styles.emptyText}>No media in this group yet.</Text>
+        )}
+        contentContainerStyle={styles.gridContainer}
+      />
 
-      <View style={styles.photoCountContainer}>
-        <Text style={styles.photoCount}>
-          {photoCount > 0 &&
-            `${photoCount} ${photoCount === 1 ? "photo" : "photos"} added`}
-          {photoCount > 0 && videoCount > 0 && " and "}
-          {videoCount > 0 &&
-            `${videoCount} ${videoCount === 1 ? "video" : "videos"} added`}
-          {photoCount === 0 && videoCount === 0 && "No media added yet"}
-        </Text>
-        <Text style={styles.photoHint}>
-          Media will be visible when this momento unlocks
-        </Text>
-      </View>
+      {showUndoButton && (
+        <View style={styles.undoContainer}>
+          <TouchableOpacity 
+            style={styles.undoButton}
+            onPress={handleUndo}
+          >
+            <Ionicons name="arrow-undo" size={20} color="#fff" />
+            <Text style={styles.undoButtonText}>Undo</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
-      <View style={styles.addButtonContainer}>
-        <Button
-          title="Add Photo/Video from Camera Roll"
-          onPress={pickImage}
-          color="#1ED860"
-        />
-      </View>
+      <Modal
+        visible={showCamera}
+        animationType="slide"
+        onRequestClose={() => setShowCamera(false)}>
+        <View style={styles.cameraContainer}>
+          {permission?.granted ? (
+            <CameraView 
+              style={styles.camera}
+              ref={cameraRef}
+              isActive={true}
+              enableAudio={!isCameraMode}
+              onMountError={(error) => {
+                console.error("Camera mount error:", error);
+                Alert.alert("Camera Error", "Failed to start camera. Please try again.");
+                setShowCamera(false);
+              }}
+              onError={(error) => {
+                console.error("Camera error:", error);
+                Alert.alert("Camera Error", "An error occurred with the camera.");
+              }}
+              onRecordingFinished={async (video) => {
+                console.log('Recording finished:', video);
+                try {
+                  const mediaId = Date.now().toString();
+                  await addPhotoToGroup(groupId, video.uri, true, mediaId);
+                  setShowCamera(false);
+                  setLastAddedPhoto({ id: mediaId, uri: video.uri, isVideo: true });
+                  setShowUndoButton(true);
+                  setTimeout(() => {
+                    setShowUndoButton(false);
+                    setLastAddedPhoto(null);
+                  }, 5000);
+                } catch (error) {
+                  console.error('Error saving video:', error);
+                  Alert.alert('Error', 'Failed to save video. Please try again.');
+                }
+                setIsRecording(false);
+              }}
+              onInitialized={() => {
+                console.log('Camera initialized');
+              }}
+              videoStabilizationMode="auto"
+              zoom={0}
+            >
+              <View style={styles.cameraControls}>
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => setShowCamera(false)}>
+                  <Ionicons name="close" size={32} color="#fff" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.switchModeButton}
+                  onPress={() => {
+                    if (isRecording) {
+                      Alert.alert('Stop Recording', 'Please stop recording before switching modes');
+                      return;
+                    }
+                    setIsCameraMode(!isCameraMode);
+                  }}>
+                  <Ionicons 
+                    name={isCameraMode ? "videocam" : "camera"} 
+                    size={28} 
+                    color="#fff" 
+                  />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.captureButton,
+                    isRecording && styles.recordingButton
+                  ]}
+                  onPress={handleCameraAction}
+                  disabled={loading}>
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <View style={[
+                      styles.captureButtonInner,
+                      isRecording && styles.recordingButtonInner
+                    ]} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </CameraView>
+          ) : (
+            <View style={styles.permissionDenied}>
+              <Text style={styles.permissionText}>
+                Camera permission is required to take photos and videos
+              </Text>
+              <TouchableOpacity
+                style={styles.button}
+                onPress={() => setShowCamera(false)}>
+                <Text style={styles.buttonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </Modal>
     </View>
   );
-}
+} 
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
-  },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    padding: 8,
-    paddingTop: 80, // To account for the back button
-  },
-  backButton: {
-    position: "absolute",
-    left: 20,
-    top: 70,
-    zIndex: 10,
-    padding: 10,
-  },
-  backIcon: {
-    width: 24,
-    height: 24,
-  },
-  groupHeader: {
-    alignItems: "center",
-    marginBottom: 15,
-  },
-  groupName: {
-    color: "#111",
-    fontSize: 17,
-    fontWeight: "700",
-    backgroundColor: "#1ED860",
-    borderRadius: 25,
-    paddingHorizontal: 30,
-    paddingVertical: 8,
-    textAlign: "center",
-  },
-  membersContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    marginTop: 15,
-    marginBottom: 15,
-    gap: 6,
-  },
-  memberTag: {
-    borderRadius: 25,
-    paddingHorizontal: 30,
-    paddingVertical: 4,
-    marginBottom: 4,
-  },
-  selectedMemberTag: {
-    borderWidth: 2,
-    borderColor: "#FFF",
-  },
-  memberTagText: {
-    color: "#111",
-    fontSize: 10,
-    fontWeight: "500",
-  },
-  photoGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    marginBottom: 6,
-  },
-  noPhotosContainer: {
-    padding: 20,
-    backgroundColor: "#212121",
-    borderRadius: 10,
-    alignItems: "center",
-    marginBottom: 15,
-  },
-  noPhotosText: {
-    color: "#DFDFDF",
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  gridPhoto: {
-    width: (width - 32) / 4 - 4,
-    height: 90,
-    borderRadius: 5,
-    marginBottom: 6,
-  },
-  featureRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 6,
-  },
-  featurePhoto: {
-    width: (width - 32) / 2 - 3,
-    height: 186,
-    borderRadius: 5,
-  },
-  smallPhotosContainer: {
-    width: (width - 32) / 2 - 3,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-  smallGridPhoto: {
-    width: (width - 32) / 4 - 4,
-    height: 90,
-    borderRadius: 5,
-    marginBottom: 6,
-  },
-  lastRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    marginBottom: 6,
-  },
-  widePhoto: {
-    width: ((width - 32) / 4) * 1.5 - 3,
-    height: 90,
-    borderRadius: 5,
-    marginBottom: 6,
-  },
-  fullWidthPhoto: {
-    width: width - 16,
-    height: 90,
-    borderRadius: 5,
-    marginBottom: 6,
-  },
-  commentsContainer: {
-    backgroundColor: "#1B1B1B",
-    borderRadius: 5,
-    padding: 6,
-    marginTop: 7,
-  },
-  commentBubble: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderRadius: 5,
-    padding: 4,
-    marginBottom: 7,
-  },
-  userIcon: {
-    width: 20,
-    height: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  userIconImage: {
-    width: 20,
-    height: 20,
-  },
-  commentText: {
-    color: "#111",
-    fontSize: 10,
-  },
-  commentInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#1ED860",
-    borderRadius: 5,
-    padding: 4,
-    marginTop: 32,
-  },
-  commentInput: {
-    flex: 1,
-    color: "#111",
-    fontSize: 10,
-  },
-  sendIcon: {
-    width: 22,
-    height: 22,
-  },
-
-  // Styles for locked view (existing styles)
-  header: {
-    marginTop: 40,
-    marginBottom: 20,
-    alignItems: "center",
+    backgroundColor: '#fff',
   },
   title: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#DFDFDF",
-    marginBottom: 10,
-  },
-  unlockDate: {
-    fontSize: 16,
-    color: "#DFDFDF",
-    marginBottom: 20,
-  },
-  photoCountContainer: {
-    backgroundColor: "#212121",
+    fontSize: 20,
+    fontWeight: 'bold',
     padding: 15,
-    borderRadius: 10,
-    marginBottom: 30,
-    alignItems: "center",
-    marginHorizontal: 20,
   },
-  photoCount: {
+  headerContainer: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  addButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#007AFF',
+    padding: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  cameraButton: {
+    backgroundColor: '#34C759',
+  },
+  addButtonText: {
+    color: '#fff',
     fontSize: 16,
-    color: "#DFDFDF",
-    fontWeight: "600",
-    marginBottom: 5,
+    fontWeight: '500',
   },
-  photoHint: {
+  unlockContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  passwordInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+  },
+  unlockButton: {
+    backgroundColor: '#28CD41',
+    padding: 12,
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  unlockButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  gridContainer: {
+    padding: 2,
+  },
+  mediaItem: {
+    flex: 1/3,
+    aspectRatio: 1,
+    padding: 2,
+  },
+  mediaPreview: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  videoContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  videoPlaceholder: {
+    flex: 1,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoIcon: {
+    fontSize: 32,
+  },
+  playButton: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [
+      { translateX: -15 },
+      { translateY: -15 }
+    ],
+    width: 30,
+    height: 30,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  playButtonText: {
+    fontSize: 20,
+  },
+  emptyText: {
+    textAlign: 'center',
+    padding: 20,
+    color: '#666',
+  },
+  cameraContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  camera: {
+    flex: 1,
+  },
+  cameraControls: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    padding: 20,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 40,
+    left: 20,
+    zIndex: 1,
+  },
+  captureButton: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  captureButtonInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#000',
+  },
+  permissionDenied: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  permissionText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#fff',
+  },
+  button: {
+    backgroundColor: '#007AFF',
+    padding: 15,
+    borderRadius: 8,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  commentContainer: {
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  commentText: {
     fontSize: 14,
-    color: "#777",
-    fontStyle: "italic",
   },
-  addButtonContainer: {
-    marginTop: 20,
-    alignItems: "center",
-    marginHorizontal: 20,
+  commentTimestamp: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
   },
-});
+  replyButton: {
+    marginTop: 8,
+    padding: 8,
+  },
+  replyButtonText: {
+    color: '#007AFF',
+    fontSize: 14,
+  },
+  replyInputContainer: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  replyInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 8,
+    marginRight: 8,
+  },
+  submitReplyButton: {
+    backgroundColor: '#007AFF',
+    padding: 8,
+    borderRadius: 8,
+  },
+  submitReplyText: {
+    color: '#fff',
+  },
+  undoContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+  },
+  undoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    padding: 12,
+    borderRadius: 25,
+    gap: 8,
+  },
+  undoButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  switchModeButton: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    zIndex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    padding: 10,
+    borderRadius: 20,
+  },
+  recordingButton: {
+    backgroundColor: '#FF3B30',
+  },
+  recordingButtonInner: {
+    backgroundColor: '#FF3B30',
+    borderColor: '#fff',
+  },
+}); 
