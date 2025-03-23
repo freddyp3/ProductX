@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, ScrollView } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useGroups } from '../context/GroupContext';
 
 export default function CreateGroupScreen({ navigation }) {
+  const { addGroup } = useGroups();
   const [groupName, setGroupName] = useState('');
   const [members, setMembers] = useState([]);
   const [newMember, setNewMember] = useState('');
@@ -20,13 +22,22 @@ export default function CreateGroupScreen({ navigation }) {
     setMembers(members.filter(member => member !== memberToRemove));
   };
 
-  const handleCreateGroup = () => {
-    // TODO: Implement group creation with Firebase
-    navigation.navigate('Group', { 
-      groupName,
-      members,
-      unlockDate: unlockDate.toISOString()
-    });
+  const handleConfirm = () => {
+    // Create the new group object
+    const newGroup = {
+      id: Date.now().toString(),
+      name: groupName,
+      members: members,
+      unlockDate: unlockDate.toISOString(),
+      photoCount: 0,
+      photos: [] // Initialize empty photos array
+    };
+
+    // Add the group using our context
+    addGroup(newGroup);
+
+    // Navigate back to home screen
+    navigation.navigate('Home');
   };
 
   const onDateChange = (event, selectedDate) => {
@@ -98,8 +109,8 @@ export default function CreateGroupScreen({ navigation }) {
         {/* Create Group Button */}
         <View style={styles.createButtonContainer}>
           <Button 
-            title="Create Group" 
-            onPress={handleCreateGroup}
+            title="Confirm Group Creation" 
+            onPress={handleConfirm}
             disabled={!groupName || members.length === 0}
           />
         </View>
