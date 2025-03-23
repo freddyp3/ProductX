@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TextInput, Button, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useGroups } from '../context/GroupContext';
 
@@ -23,46 +23,49 @@ export default function CreateGroupScreen({ navigation }) {
   };
 
   const handleConfirm = () => {
-    // Create the new group object
     const newGroup = {
       id: Date.now().toString(),
       name: groupName,
       members: members,
       unlockDate: unlockDate.toISOString(),
       photoCount: 0,
-      photos: [] // Initialize empty photos array
+      media: [],
+      isUnlocked: false
     };
 
-    // Add the group using our context
     addGroup(newGroup);
-
-    // Navigate back to home screen
     navigation.navigate('Home');
   };
 
-  const onDateChange = (event, selectedDate) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setUnlockDate(selectedDate);
+  const handleNext = () => {
+    if (!groupName.trim()) {
+      alert('Please enter a group name');
+      return;
     }
+    if (members.length === 0) {
+      alert('Please add at least one member');
+      return;
+    }
+
+    // Navigate to unlock date screen with the group info
+    navigation.navigate('SetUnlockDate', {
+      groupName: groupName.trim(),
+      members: members
+    });
   };
 
   return (
     <ScrollView style={styles.scrollView}>
       <View style={styles.container}>
-        <Text style={styles.title}>Create a New Group</Text>
+        <Text style={styles.title}>Create New Group</Text>
         
-        {/* Group Name Input */}
-        <Text style={styles.label}>Group Name</Text>
         <TextInput
           style={styles.input}
-          placeholder="Enter group name"
+          placeholder="Group Name"
           value={groupName}
           onChangeText={setGroupName}
         />
 
-        {/* Member Addition Section */}
-        <Text style={styles.label}>Add Members</Text>
         <View style={styles.memberInputContainer}>
           <TextInput
             style={styles.memberInput}
@@ -70,50 +73,36 @@ export default function CreateGroupScreen({ navigation }) {
             value={newMember}
             onChangeText={setNewMember}
           />
-          <Button title="Add" onPress={handleAddMember} />
+          <TouchableOpacity 
+            style={styles.addButton}
+            onPress={handleAddMember}
+          >
+            <Text style={styles.addButtonText}>Add</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Members List */}
         {members.length > 0 && (
           <View style={styles.membersList}>
-            <Text style={styles.label}>Members:</Text>
             {members.map((member, index) => (
               <View key={index} style={styles.memberItem}>
                 <Text>{member}</Text>
-                <Button 
-                  title="Remove" 
+                <TouchableOpacity
                   onPress={() => handleRemoveMember(member)}
-                  color="red"
-                />
+                  style={styles.removeButton}
+                >
+                  <Text style={styles.removeButtonText}>Remove</Text>
+                </TouchableOpacity>
               </View>
             ))}
           </View>
         )}
 
-        {/* Unlock Date Selection */}
-        <Text style={styles.label}>Unlock Date</Text>
-        <Button 
-          title={`Select Date: ${unlockDate.toLocaleDateString()}`}
-          onPress={() => setShowDatePicker(true)}
-        />
-        
-        {showDatePicker && (
-          <DateTimePicker
-            value={unlockDate}
-            mode="date"
-            onChange={onDateChange}
-            minimumDate={new Date()}
-          />
-        )}
-
-        {/* Create Group Button */}
-        <View style={styles.createButtonContainer}>
-          <Button 
-            title="Confirm Group Creation" 
-            onPress={handleConfirm}
-            disabled={!groupName || members.length === 0}
-          />
-        </View>
+        <TouchableOpacity 
+          style={styles.nextButton}
+          onPress={handleNext}
+        >
+          <Text style={styles.nextButtonText}>Next</Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -132,48 +121,69 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: 'center',
   },
-  label: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginTop: 10,
-    marginBottom: 5,
-  },
   input: {
-    width: '100%',
-    height: 40,
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 5,
-    paddingHorizontal: 10,
-    marginBottom: 20,
+    borderColor: '#ddd',
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 16,
+    fontSize: 16,
   },
   memberInputContainer: {
     flexDirection: 'row',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   memberInput: {
     flex: 1,
-    height: 40,
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 5,
-    paddingHorizontal: 10,
-    marginRight: 10,
+    borderColor: '#ddd',
+    padding: 15,
+    borderRadius: 8,
+    marginRight: 8,
+    fontSize: 16,
+  },
+  addButton: {
+    backgroundColor: '#007AFF',
+    padding: 15,
+    borderRadius: 8,
+    justifyContent: 'center',
+  },
+  addButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
   },
   membersList: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   memberItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 5,
-    marginTop: 5,
+    backgroundColor: '#f8f8f8',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
   },
-  createButtonContainer: {
+  removeButton: {
+    backgroundColor: '#FF3B30',
+    padding: 8,
+    borderRadius: 6,
+  },
+  removeButtonText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  nextButton: {
+    backgroundColor: '#007AFF',
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
     marginTop: 20,
+  },
+  nextButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '500',
   },
 }); 
