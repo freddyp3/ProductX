@@ -1,78 +1,154 @@
 import React from 'react';
-import { View, Text, Button, Image, FlatList } from 'react-native';
+import { View, Text, Button, Image, FlatList, Alert, TouchableOpacity, StyleSheet } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Video } from 'expo-av';
 import { useGroups } from '../context/GroupContext';
 
-export default function GroupScreen({ route }) {
+export default function GroupScreen({ route, navigation }) {
   const { groupName, unlockDate, isUnlocked } = route.params || {};
-  const { groups, addPhotoToGroup } = useGroups();
+  const { groups, unlockedGroups, addPhotoToGroup } = useGroups();
   
-  // Find the current group from our groups context
-  const currentGroup = groups.find(g => g.name === groupName);
-  const photos = currentGroup?.photos || [];
+  const currentGroup = isUnlocked 
+    ? unlockedGroups.find(g => g.name === groupName)
+    : groups.find(g => g.name === groupName);
 
-  const pickImage = async () => {
-    // Request permission
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
-    if (status !== 'granted') {
-      alert('Sorry, we need camera roll permissions to make this work!');
-      return;
-    }
+  const media = currentGroup?.media || [];
 
-    // Pick the image
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All, // Allow both photos and videos
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
+  const pickMedia = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please allow access to your photos to use this feature.');
+        return;
+      }
 
-    if (!result.canceled) {
-      // Save the photo to the group
-      addPhotoToGroup(currentGroup.id, result.assets[0].uri);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        allowsEditing: false,
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const mediaUri = result.assets[0].uri;
+        const isVideo = result.assets[0].type === 'video';
+        addPhotoToGroup(currentGroup.id, mediaUri, isVideo);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'There was a problem adding your media.');
     }
   };
 
-  if (isUnlocked) {
-    // View for unlocked groups - just show photos
-    return (
-      <View>
-        <Text>{groupName}</Text>
-        <FlatList
-          data={photos}
-          numColumns={2}
-          keyExtractor={(item, index) => index.toString()}
-          renderItem={({ item }) => (
-            <Image
-              source={{ uri: item }}
-              style={{ width: 150, height: 150, margin: 5 }}
-            />
-          )}
+  const openMedia = (item) => {
+    navigation.navigate('MediaView', {
+      mediaUri: item.uri,
+      groupId: currentGroup.id,
+      isVideo: item.isVideo,
+      groupName: currentGroup.name
+    });
+  };
+
+  const renderMediaItem = ({ item }) => (
+    <TouchableOpacity 
+      onPress={() => openMedia(item)}
+      style={styles.mediaItem}
+    >
+      {item.isVideo ? (
+        <View style={styles.videoContainer}>
+          <Video
+            source={{ uri: item.uri }}
+            style={styles.media}
+            resizeMode="cover"
+            shouldPlay={false}
+            isMuted={true}
+          />
+          <Text style={styles.videoIcon}>🎥</Text>
+        </View>
+      ) : (
+        <Image
+          source={{ uri: item.uri }}
+          style={styles.media}
+          resizeMode="cover"
         />
+      )}
+    </TouchableOpacity>
+  );
+
+  if (!currentGroup) {
+    return (
+      <View style={styles.container}>
+        <Text>Loading group...</Text>
       </View>
     );
   }
 
-  // View for current groups - allow adding photos
   return (
-    <View>
-      <Text>{groupName}</Text>
-      <Text>Unlocks on: {new Date(unlockDate).toLocaleDateString()}</Text>
+    <View style={styles.container}>
+      <Text style={styles.title}>{groupName}</Text>
       
-      <Button title="Add Photo/Video" onPress={pickImage} />
+      {!isUnlocked && (
+        <View style={styles.controls}>
+          <Text>Unlocks on: {new Date(unlockDate).toLocaleDateString()}</Text>
+          <Button title="Add Photo/Video" onPress={pickMedia} />
+        </View>
+      )}
       
       <FlatList
-        data={photos}
+        data={media}
         numColumns={2}
-        keyExtractor={(item, index) => index.toString()}
-        renderItem={({ item }) => (
-          <Image
-            source={{ uri: item }}
-            style={{ width: 150, height: 150, margin: 5 }}
-          />
+        keyExtractor={(item) => item.id || item.uri}
+        renderItem={renderMediaItem}
+        ListEmptyComponent={() => (
+          <Text style={styles.emptyText}>No media in this group yet.</Text>
         )}
+        contentContainerStyle={styles.gridContainer}
       />
     </View>
   );
-} 
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    padding: 15,
+  },
+  controls: {
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  gridContainer: {
+    padding: 5,
+  },
+  mediaItem: {
+    flex: 1,
+    margin: 5,
+    aspectRatio: 1,
+    maxWidth: '50%',
+  },
+  media: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 8,
+  },
+  videoContainer: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#ddd',
+    borderRadius: 8,
+  },
+  videoIcon: {
+    position: 'absolute',
+    bottom: 5,
+    right: 5,
+  },
+  emptyText: {
+    textAlign: 'center',
+    padding: 20,
+    color: '#666',
+  }
+}); 

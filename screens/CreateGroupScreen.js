@@ -23,28 +23,18 @@ export default function CreateGroupScreen({ navigation }) {
   };
 
   const handleConfirm = () => {
-    // Create the new group object
     const newGroup = {
       id: Date.now().toString(),
       name: groupName,
       members: members,
       unlockDate: unlockDate.toISOString(),
       photoCount: 0,
-      photos: [] // Initialize empty photos array
+      media: [],
+      isUnlocked: false
     };
 
-    // Add the group using our context
     addGroup(newGroup);
-
-    // Navigate back to home screen
     navigation.navigate('Home');
-  };
-
-  const onDateChange = (event, selectedDate) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setUnlockDate(selectedDate);
-    }
   };
 
   return (
@@ -101,7 +91,12 @@ export default function CreateGroupScreen({ navigation }) {
           <DateTimePicker
             value={unlockDate}
             mode="date"
-            onChange={onDateChange}
+            onChange={(event, selectedDate) => {
+              setShowDatePicker(false);
+              if (selectedDate) {
+                setUnlockDate(selectedDate);
+              }
+            }}
             minimumDate={new Date()}
           />
         )}
@@ -109,7 +104,7 @@ export default function CreateGroupScreen({ navigation }) {
         {/* Create Group Button */}
         <View style={styles.createButtonContainer}>
           <Button 
-            title="Confirm Group Creation" 
+            title="Create Group" 
             onPress={handleConfirm}
             disabled={!groupName || members.length === 0}
           />

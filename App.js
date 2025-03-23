@@ -4,12 +4,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { GroupProvider } from './context/GroupContext';
 
-// Import screens
+// Import all screens
 import HomeScreen from './screens/HomeScreen';
 import CreateGroupScreen from './screens/CreateGroupScreen';
-import GroupScreen from './screens/GroupScreen';
 import CurrentGroupsScreen from './screens/CurrentGroupsScreen';
 import UnlockedGroupsScreen from './screens/UnlockedGroupsScreen';
+import GroupScreen from './screens/GroupScreen';
+import MediaViewScreen from './screens/MediaViewScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -21,17 +22,12 @@ export default function App() {
           <Stack.Screen 
             name="Home" 
             component={HomeScreen} 
-            options={{ title: 'Time Capsule' }}
+            options={{ title: 'Home' }}
           />
           <Stack.Screen 
             name="CreateGroup" 
             component={CreateGroupScreen} 
             options={{ title: 'Create New Group' }}
-          />
-          <Stack.Screen 
-            name="Group" 
-            component={GroupScreen} 
-            options={{ title: 'Group' }}
           />
           <Stack.Screen 
             name="CurrentGroups" 
@@ -42,6 +38,16 @@ export default function App() {
             name="UnlockedGroups" 
             component={UnlockedGroupsScreen} 
             options={{ title: 'Unlocked Groups' }}
+          />
+          <Stack.Screen 
+            name="Group" 
+            component={GroupScreen} 
+            options={{ title: 'Group' }}
+          />
+          <Stack.Screen 
+            name="MediaView" 
+            component={MediaViewScreen} 
+            options={{ title: 'View Media' }}
           />
         </Stack.Navigator>
         <StatusBar style="auto" />
