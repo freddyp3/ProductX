@@ -1,111 +1,160 @@
-import React, { useState } from 'react';
-import { View, FlatList, TouchableOpacity, Text, StyleSheet, TextInput, Modal } from 'react-native';
-import { useGroups } from '../context/GroupContext';
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  TextInput,
+  Button,
+  Modal,
+  StyleSheet,
+  Image,
+  StatusBar,
+  SafeAreaView,
+} from "react-native";
+import { useGroups } from "../context/GroupContext";
 
 export default function CurrentGroupsScreen({ navigation }) {
-  const { groups, unlockGroup } = useGroups();
-  const [selectedGroup, setSelectedGroup] = useState(null);
-  const [password, setPassword] = useState('');
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const { groups } = useGroups();
 
-  const handleUnlock = () => {
-    if (password === '1234') { // In production, use secure password validation
-      unlockGroup(selectedGroup.id);
-      setShowPasswordModal(false);
-      setPassword('');
-      navigation.navigate('Group', {
-        groupId: selectedGroup.id,
-        isUnlocked: true,
-        groupName: selectedGroup.name,
-        unlockDate: selectedGroup.unlockDate,
-        photos: selectedGroup.photos
-      });
-    } else {
-      alert('Incorrect password');
-    }
+  // Filter groups to only show those that have not reached their unlock date
+  const currentGroups = groups.filter((group) => {
+    const unlockDate = new Date(group.unlockDate);
+    const currentDate = new Date();
+    return unlockDate > currentDate;
+  });
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [password, setPassword] = useState("");
+  const [showPasswordInput, setShowPasswordInput] = useState(false);
+
+  const handleGroupPress = (group) => {
+    navigation.navigate("Group", {
+      groupName: group.name,
+      unlockDate: group.unlockDate,
+      isUnlocked: false,
+    });
   };
 
-  const renderGroup = ({ item }) => (
-    <TouchableOpacity
-      style={styles.groupItem}
-      onPress={() => navigation.navigate('Group', { 
-        groupId: item.id,
-        isUnlocked: false,
-        groupName: item.name,
-        unlockDate: item.unlockDate,
-        photos: item.photos
-      })}
-      onLongPress={() => {
-        setSelectedGroup(item);
-        setShowPasswordModal(true);
-      }}
-    >
-      <Text style={styles.groupName}>{item.name}</Text>
-      <Text style={styles.groupDetails}>
-        Members: {item.members.length} • Photos: {item.photoCount || 0} • Unlocks: {new Date(item.unlockDate).toLocaleDateString()}
-      </Text>
-      <Text style={styles.hint}>Long press to unlock with password</Text>
-    </TouchableOpacity>
-  );
+  const handleLongPress = (group) => {
+    setSelectedGroup(group);
+    setShowPasswordInput(true);
+    setPassword("");
+  };
 
-  if (groups.length === 0) {
-    return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No current groups</Text>
-        <TouchableOpacity
-          style={styles.createButton}
-          onPress={() => navigation.navigate('CreateGroup')}
-        >
-          <Text style={styles.createButtonText}>Create a Group</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const handleUnlock = () => {
+    if (password === "1234") {
+      navigation.navigate("Group", {
+        groupName: selectedGroup.name,
+        unlockDate: selectedGroup.unlockDate,
+        isUnlocked: true,
+      });
+    } else {
+      alert("Incorrect password");
+    }
+    setShowPasswordInput(false);
+    setPassword("");
+  };
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+
+      {/* Back Button - Positioned like CreateGroupScreen */}
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => navigation.goBack()}
+      >
+        <Image
+          source={require("../assets/back-icon.png")}
+          defaultSource={require("../assets/back-icon.png")}
+          style={styles.backIcon}
+        />
+      </TouchableOpacity>
+
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerContent}>
+          <View style={styles.backIconPlaceholder} />
+          <View style={styles.titleContainer}>
+            <View style={styles.titleWithIcon}>
+              <Text style={styles.title}>Momentos.</Text>
+              <Image
+                source={require("../assets/lock-icon.png")}
+                defaultSource={require("../assets/lock-icon.png")}
+                style={styles.titleLockIcon}
+              />
+            </View>
+          </View>
+          <Image
+            source={require("../assets/profile-icon.png")}
+            defaultSource={require("../assets/profile-icon.png")}
+            style={styles.profileIcon}
+          />
+        </View>
+        <View style={styles.subtitleContainer}>
+          <Text style={styles.subtitle}>Enjoy reminiscing</Text>
+        </View>
+      </View>
+
+      {/* Password Modal */}
       <Modal
-        visible={showPasswordModal}
+        visible={showPasswordInput}
         transparent={true}
         animationType="slide"
+        onRequestClose={() => setShowPasswordInput(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Enter Password to Unlock</Text>
+            <Text style={styles.modalTitle}>Enter Password</Text>
             <TextInput
-              style={styles.input}
-              placeholder="Enter password"
+              style={styles.passwordInput}
+              placeholder="Enter password to unlock"
               value={password}
               onChangeText={setPassword}
               secureTextEntry
-              autoFocus
             />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => {
-                  setShowPasswordModal(false);
-                  setPassword('');
-                }}
-              >
-                <Text style={styles.buttonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.unlockButton]}
-                onPress={handleUnlock}
-              >
-                <Text style={styles.buttonText}>Unlock</Text>
-              </TouchableOpacity>
+            <View style={styles.buttonContainer}>
+              <Button
+                title="Cancel"
+                onPress={() => setShowPasswordInput(false)}
+                color="#777"
+              />
+              <Button title="Unlock" onPress={handleUnlock} color="#1ED860" />
             </View>
           </View>
         </View>
       </Modal>
 
+      {/* Groups List */}
       <FlatList
-        data={groups}
-        renderItem={renderGroup}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContainer}
+        data={currentGroups}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.groupItem}
+            onPress={() => handleGroupPress(item)}
+            onLongPress={() => handleLongPress(item)}
+          >
+            <View>
+              <Text style={styles.groupName}>{item.name}</Text>
+              <Text style={styles.groupDetails}>
+                Unlocks: {new Date(item.unlockDate).toLocaleDateString()}
+              </Text>
+              <Text style={styles.groupDetails}>Photos: {item.photoCount}</Text>
+              <Text style={styles.hintText}>
+                Long press to unlock with password
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No current Momentos</Text>
+            <Text style={styles.emptySubText}>
+              Create a new Momento to get started
+            </Text>
+          </View>
+        }
       />
     </View>
   );
@@ -114,103 +163,148 @@ export default function CurrentGroupsScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: "#000",
   },
-  listContainer: {
-    padding: 16,
+  header: {
+    paddingTop: 40,
+    paddingHorizontal: 20,
+  },
+  headerContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    marginTop: 10,
+  },
+  backButton: {
+    position: "absolute",
+    left: 20,
+    top: 70,
+    zIndex: 10,
+    padding: 10,
+  },
+  backIcon: {
+    width: 24,
+    height: 24,
+    tintColor: "#DFDFDF",
+  },
+  backIconPlaceholder: {
+    width: 24,
+    height: 24,
+  },
+  titleContainer: {
+    alignItems: "center",
+    marginTop: 5,
+  },
+  titleWithIcon: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  titleLockIcon: {
+    width: 24,
+    height: 24,
+    marginLeft: 8,
+    tintColor: "#DFDFDF",
+  },
+  title: {
+    color: "#DFDFDF",
+    fontFamily: "System",
+    fontSize: 30,
+    fontWeight: "700",
+    lineHeight: 40,
+  },
+  profileIcon: {
+    width: 29,
+    height: 29,
+  },
+  subtitleContainer: {
+    alignItems: "center",
+    marginTop: 5,
+  },
+  subtitle: {
+    color: "#DFDFDF",
+    fontFamily: "System",
+    fontSize: 16,
+    fontWeight: "600",
+    lineHeight: 40,
   },
   groupItem: {
-    backgroundColor: '#f8f8f8',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#eee',
+    backgroundColor: "#1ED860",
+    padding: 15,
+    borderRadius: 25,
+    marginBottom: 10,
+    marginHorizontal: 20,
+    alignItems: "center",
   },
   groupName: {
+    color: "#111",
     fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 4,
+    fontWeight: "700",
+    marginBottom: 5,
+    textAlign: "center",
   },
   groupDetails: {
+    color: "#111",
     fontSize: 14,
-    color: '#666',
+    marginBottom: 3,
+    fontWeight: "600",
+    textAlign: "center",
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  emptyText: {
-    fontSize: 18,
-    color: '#666',
-    marginBottom: 20,
-  },
-  createButton: {
-    backgroundColor: '#007AFF',
-    padding: 12,
-    borderRadius: 8,
-  },
-  createButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  hint: {
+  hintText: {
+    color: "#111",
     fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-    fontStyle: 'italic',
+    fontStyle: "italic",
+    marginTop: 5,
+    textAlign: "center",
+    opacity: 0.7,
   },
-  modalOverlay: {
+  modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
   },
   modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: "#212121",
+    borderRadius: 10,
     padding: 20,
-    width: '80%',
-    alignItems: 'center',
+    width: "80%",
+    alignItems: "center",
   },
   modalTitle: {
+    color: "#DFDFDF",
     fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
+    fontWeight: "600",
+    marginBottom: 15,
   },
-  input: {
-    width: '100%',
-    height: 40,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    marginBottom: 16,
+  passwordInput: {
+    backgroundColor: "#333",
+    color: "#DFDFDF",
+    width: "100%",
+    padding: 10,
+    borderRadius: 5,
+    marginBottom: 15,
   },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
+  buttonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
   },
-  modalButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    marginHorizontal: 8,
-    alignItems: 'center',
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 30,
+    marginTop: 50,
   },
-  cancelButton: {
-    backgroundColor: '#ff3b30',
+  emptyText: {
+    color: "#DFDFDF",
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 10,
   },
-  unlockButton: {
-    backgroundColor: '#007AFF',
+  emptySubText: {
+    color: "#777",
+    fontSize: 14,
   },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-}); 
+});
