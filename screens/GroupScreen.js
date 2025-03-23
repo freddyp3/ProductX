@@ -76,13 +76,12 @@ export default function GroupScreen({ route, navigation }) {
       return;
     }
 
-    // Pick the image
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All, // Allow both photos and videos
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
+    useEffect(() => {
+      (async () => {
+        const { status } = await Camera.requestCameraPermissionsAsync();
+        setCameraPermission(status === "granted");
+      })();
+    }, []);
 
     if (!result.canceled) {
       // Determine if it's a video based on the mimeType
@@ -177,15 +176,20 @@ export default function GroupScreen({ route, navigation }) {
                 {filteredPhotos.slice(0, 4).map((photo, index) => (
                   <TouchableOpacity
                     key={`row1-${index}`}
-                    onPress={() =>
+                    onPress={() => {
+                      if (!currentGroup?.id) {
+                        console.warn(
+                          "No groupId available for photo detail navigation",
+                        );
+                      }
                       navigation.navigate("PhotoDetail", {
                         photoUri: photo,
                         photoDate:
                           currentGroup?.mediaItems?.[index]?.creationTime ||
                           new Date().toISOString(),
                         groupId: currentGroup?.id,
-                      })
-                    }
+                      });
+                    }}
                   >
                     <Image
                       source={{ uri: photo }}

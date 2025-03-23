@@ -35,7 +35,6 @@ export default function CreateGroupScreen({ navigation }) {
   };
 
   const handleConfirm = () => {
-    // Create the new group object
     const newGroup = {
       id: Date.now().toString(),
       name: groupName,
@@ -45,7 +44,6 @@ export default function CreateGroupScreen({ navigation }) {
       photos: photos, // Add selected photos
     };
 
-    // Add the group using our context
     addGroup(newGroup);
 
     // Reset navigation stack to Home screen to avoid back button issues
@@ -94,6 +92,9 @@ export default function CreateGroupScreen({ navigation }) {
     if (selectedDate) {
       setUnlockDate(selectedDate);
     }
+
+    // Don't navigate to another screen, just update the date
+    // This fixes the "action NAVIGATE with payload was not handled by any navigator" error
   };
 
   return (
@@ -106,7 +107,9 @@ export default function CreateGroupScreen({ navigation }) {
         >
           <Image
             source={require("../assets/back-icon.png")}
+            defaultSource={require("../assets/back-icon.png")}
             style={styles.backIcon}
+            tintColor="#DFDFDF"
           />
         </TouchableOpacity>
 
@@ -122,8 +125,6 @@ export default function CreateGroupScreen({ navigation }) {
           onChangeText={setGroupName}
         />
 
-        {/* Member Addition Section */}
-        <Text style={styles.label}>Add Members</Text>
         <View style={styles.memberInputContainer}>
           <TextInput
             style={styles.memberInput}

@@ -4,6 +4,7 @@ const GroupContext = createContext();
 
 export function GroupProvider({ children }) {
   const [groups, setGroups] = useState([]);
+  const [unlockedGroups, setUnlockedGroups] = useState([]);
 
   const addGroup = (newGroup) => {
     // Initialize media counts
