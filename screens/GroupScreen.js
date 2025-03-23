@@ -1,14 +1,22 @@
-import React, { useState } from 'react';
-import { View, Text, Button, Image, FlatList, Alert, TouchableOpacity, StyleSheet, TextInput, ScrollView } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, Button, Image, FlatList, Alert, TouchableOpacity, StyleSheet, TextInput, ScrollView, Modal, ActivityIndicator } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Video } from 'expo-av';
+import { Camera } from 'expo-camera';
 import { useGroups } from '../context/GroupContext';
 import LockedMediaPlaceholder from '../components/LockedMediaPlaceholder';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function GroupScreen({ route, navigation }) {
   const { groupId, isUnlocked } = route.params;
-  const { groups, unlockedGroups, addPhotoToGroup, unlockGroup } = useGroups();
+  const { groups, unlockedGroups, addPhotoToGroup, removePhotoFromGroup, unlockGroup } = useGroups();
   const [password, setPassword] = useState('');
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraPermission, setCameraPermission] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [lastAddedPhoto, setLastAddedPhoto] = useState(null);
+  const [showUndoButton, setShowUndoButton] = useState(false);
+  const cameraRef = useRef(null);
   
   const group = isUnlocked 
     ? unlockedGroups.find(g => g.id === groupId)
@@ -16,10 +24,17 @@ export default function GroupScreen({ route, navigation }) {
 
   const media = group?.media || [];
 
+  useEffect(() => {
+    (async () => {
+      const { status } = await Camera.requestCameraPermissionsAsync();
+      setCameraPermission(status === 'granted');
+    })();
+  }, []);
+
   const handleUnlock = () => {
     if (password === '1234') {
       unlockGroup(groupId);
-      navigation.goBack(); // Return to the groups list
+      navigation.goBack();
       Alert.alert('Success', 'Group unlocked successfully!');
     } else {
       Alert.alert('Error', 'Incorrect password');
@@ -29,7 +44,6 @@ export default function GroupScreen({ route, navigation }) {
 
   const handleAddMedia = async () => {
     try {
-      // Request permissions
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       
       if (status !== 'granted') {
@@ -37,7 +51,6 @@ export default function GroupScreen({ route, navigation }) {
         return;
       }
 
-      // Pick the media
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.All,
         allowsEditing: true,
@@ -47,11 +60,43 @@ export default function GroupScreen({ route, navigation }) {
       if (!result.canceled && result.assets && result.assets[0]) {
         const asset = result.assets[0];
         const isVideo = asset.type === 'video';
-        addPhotoToGroup(groupId, asset.uri, isVideo);
+        const mediaId = Date.now().toString();
+        await addPhotoToGroup(groupId, asset.uri, isVideo, mediaId);
+        setLastAddedPhoto({ id: mediaId, uri: asset.uri, isVideo });
+        setShowUndoButton(true);
+        setTimeout(() => setShowUndoButton(false), 5000); // Hide undo button after 5 seconds
       }
     } catch (error) {
       console.error('Error adding media:', error);
       alert('There was a problem adding your media. Please try again.');
+    }
+  };
+
+  const handleUndo = () => {
+    if (lastAddedPhoto) {
+      removePhotoFromGroup(groupId, lastAddedPhoto.id);
+      setLastAddedPhoto(null);
+      setShowUndoButton(false);
+    }
+  };
+
+  const takePhoto = async () => {
+    if (cameraRef.current) {
+      try {
+        setLoading(true);
+        const photo = await cameraRef.current.takePictureAsync();
+        const mediaId = Date.now().toString();
+        await addPhotoToGroup(groupId, photo.uri, false, mediaId);
+        setLastAddedPhoto({ id: mediaId, uri: photo.uri, isVideo: false });
+        setShowUndoButton(true);
+        setTimeout(() => setShowUndoButton(false), 5000); // Hide undo button after 5 seconds
+        setShowCamera(false);
+      } catch (error) {
+        console.error('Error taking photo:', error);
+        alert('There was a problem taking the photo. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -169,12 +214,22 @@ export default function GroupScreen({ route, navigation }) {
       
       {!isUnlocked && (
         <View style={styles.headerContainer}>
-          <TouchableOpacity 
-            style={styles.addButton} 
-            onPress={handleAddMedia}
-          >
-            <Text style={styles.addButtonText}>Add Photo/Video</Text>
-          </TouchableOpacity>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity 
+              style={[styles.addButton, styles.cameraButton]} 
+              onPress={() => setShowCamera(true)}
+            >
+              <Ionicons name="camera" size={24} color="#fff" />
+              <Text style={styles.addButtonText}>Take Photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.addButton} 
+              onPress={handleAddMedia}
+            >
+              <Ionicons name="images" size={24} color="#fff" />
+              <Text style={styles.addButtonText}>Choose Media</Text>
+            </TouchableOpacity>
+          </View>
 
           <View style={styles.unlockContainer}>
             <TextInput
@@ -204,6 +259,61 @@ export default function GroupScreen({ route, navigation }) {
         )}
         contentContainerStyle={styles.gridContainer}
       />
+
+      {showUndoButton && (
+        <View style={styles.undoContainer}>
+          <TouchableOpacity 
+            style={styles.undoButton}
+            onPress={handleUndo}
+          >
+            <Ionicons name="arrow-undo" size={20} color="#fff" />
+            <Text style={styles.undoButtonText}>Undo</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <Modal
+        visible={showCamera}
+        animationType="slide"
+        onRequestClose={() => setShowCamera(false)}>
+        <View style={styles.cameraContainer}>
+          {cameraPermission === 'granted' ? (
+            <Camera 
+              style={styles.camera} 
+              type={Camera.Constants.Type.back}
+              ref={cameraRef}>
+              <View style={styles.cameraControls}>
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => setShowCamera(false)}>
+                  <Ionicons name="close" size={32} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.captureButton}
+                  onPress={takePhoto}
+                  disabled={loading}>
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <View style={styles.captureButtonInner} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </Camera>
+          ) : (
+            <View style={styles.permissionDenied}>
+              <Text style={styles.permissionText}>
+                Camera permission is required to take photos
+              </Text>
+              <TouchableOpacity
+                style={styles.button}
+                onPress={() => setShowCamera(false)}>
+                <Text style={styles.buttonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -223,12 +333,23 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
+  buttonContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
   addButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#007AFF',
     padding: 16,
     borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 16,
+    gap: 8,
+  },
+  cameraButton: {
+    backgroundColor: '#34C759',
   },
   addButtonText: {
     color: '#fff',
@@ -309,6 +430,67 @@ const styles = StyleSheet.create({
     padding: 20,
     color: '#666',
   },
+  cameraContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  camera: {
+    flex: 1,
+  },
+  cameraControls: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    padding: 20,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 40,
+    left: 20,
+    zIndex: 1,
+  },
+  captureButton: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  captureButtonInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#000',
+  },
+  permissionDenied: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  permissionText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#fff',
+  },
+  button: {
+    backgroundColor: '#007AFF',
+    padding: 15,
+    borderRadius: 8,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
   commentContainer: {
     padding: 10,
     borderBottomWidth: 1,
@@ -350,5 +532,25 @@ const styles = StyleSheet.create({
   },
   submitReplyText: {
     color: '#fff',
+  },
+  undoContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+  },
+  undoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    padding: 12,
+    borderRadius: 25,
+    gap: 8,
+  },
+  undoButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
   },
 }); 

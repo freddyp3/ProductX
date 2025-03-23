@@ -6,11 +6,11 @@ export function GroupProvider({ children }) {
   const [groups, setGroups] = useState([]);
   const [unlockedGroups, setUnlockedGroups] = useState([]);
 
-  const addPhotoToGroup = async (groupId, mediaUri, isVideo = false) => {
+  const addPhotoToGroup = async (groupId, mediaUri, isVideo = false, mediaId = Date.now().toString()) => {
     const mediaItem = {
       uri: mediaUri,
       isVideo,
-      id: Date.now().toString(),
+      id: mediaId,
       comments: [],
       timestamp: new Date().toISOString(),
       isLocked: true
@@ -39,6 +39,38 @@ export function GroupProvider({ children }) {
               ...group,
               media: [...(group.media || []), mediaItem],
               photoCount: (group.photoCount || 0) + 1
+            };
+          }
+          return group;
+        })
+      );
+    }
+  };
+
+  const removePhotoFromGroup = (groupId, mediaId) => {
+    const isInCurrent = groups.some(g => g.id === groupId);
+    
+    if (isInCurrent) {
+      setGroups(prevGroups => 
+        prevGroups.map(group => {
+          if (group.id === groupId) {
+            return {
+              ...group,
+              media: group.media.filter(item => item.id !== mediaId),
+              photoCount: (group.photoCount || 1) - 1
+            };
+          }
+          return group;
+        })
+      );
+    } else {
+      setUnlockedGroups(prevGroups => 
+        prevGroups.map(group => {
+          if (group.id === groupId) {
+            return {
+              ...group,
+              media: group.media.filter(item => item.id !== mediaId),
+              photoCount: (group.photoCount || 1) - 1
             };
           }
           return group;
@@ -130,6 +162,7 @@ export function GroupProvider({ children }) {
       unlockedGroups,
       addGroup,
       addPhotoToGroup,
+      removePhotoFromGroup,
       unlockGroup,
       addComment
     }}>

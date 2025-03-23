@@ -1,22 +1,29 @@
 import React from 'react';
-import { View, Text, Button, StyleSheet } from 'react-native';
+import { View, Text, Button, StyleSheet, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function HomeScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Time Capsule</Text>
-      <Button
-        title="Create New Group"
-        onPress={() => navigation.navigate('CreateGroup')}
-      />
-      <Button
-        title="Current Groups"
-        onPress={() => navigation.navigate('CurrentGroups')}
-      />
-      <Button
-        title="Unlocked Groups"
-        onPress={() => navigation.navigate('UnlockedGroups')}
-      />
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => navigation.navigate('CreateGroup')}>
+        <Ionicons name="add-circle" size={24} color="#fff" />
+        <Text style={styles.buttonText}>Create New Group</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => navigation.navigate('CurrentGroups')}>
+        <Ionicons name="lock-closed" size={24} color="#fff" />
+        <Text style={styles.buttonText}>Current Groups</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => navigation.navigate('UnlockedGroups')}>
+        <Ionicons name="lock-open" size={24} color="#fff" />
+        <Text style={styles.buttonText}>Unlocked Groups</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -27,9 +34,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 20,
   },
   title: {
-    fontSize: 24,
-    marginBottom: 20,
+    fontSize: 32,
+    fontWeight: 'bold',
+    marginBottom: 40,
+    color: '#000',
+  },
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#007AFF',
+    padding: 15,
+    borderRadius: 10,
+    width: '100%',
+    marginBottom: 15,
+    justifyContent: 'center',
+    gap: 10,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
   },
 }); 
