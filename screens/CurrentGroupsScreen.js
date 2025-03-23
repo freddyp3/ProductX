@@ -1,37 +1,23 @@
 import React, { useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, TextInput, Button, StyleSheet } from 'react-native';
+import { View, FlatList, TouchableOpacity, Text, StyleSheet, TextInput, Modal } from 'react-native';
 import { useGroups } from '../context/GroupContext';
 
 export default function CurrentGroupsScreen({ navigation }) {
   const { groups, unlockGroup } = useGroups();
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [password, setPassword] = useState('');
-  const [showPasswordInput, setShowPasswordInput] = useState(false);
-
-  const handleGroupPress = (group) => {
-    navigation.navigate('Group', { 
-      groupName: group.name,
-      unlockDate: group.unlockDate,
-      isUnlocked: false,
-      photos: group.photos
-    });
-  };
-
-  const handleLongPress = (group) => {
-    setSelectedGroup(group);
-    setShowPasswordInput(true);
-    setPassword('');
-  };
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   const handleUnlock = () => {
-    if (password === '1234') {
+    if (password === '1234') { // In production, use secure password validation
       unlockGroup(selectedGroup.id);
-      setShowPasswordInput(false);
+      setShowPasswordModal(false);
       setPassword('');
       navigation.navigate('Group', {
+        groupId: selectedGroup.id,
+        isUnlocked: true,
         groupName: selectedGroup.name,
         unlockDate: selectedGroup.unlockDate,
-        isUnlocked: true,
         photos: selectedGroup.photos
       });
     } else {
@@ -39,40 +25,87 @@ export default function CurrentGroupsScreen({ navigation }) {
     }
   };
 
+  const renderGroup = ({ item }) => (
+    <TouchableOpacity
+      style={styles.groupItem}
+      onPress={() => navigation.navigate('Group', { 
+        groupId: item.id,
+        isUnlocked: false,
+        groupName: item.name,
+        unlockDate: item.unlockDate,
+        photos: item.photos
+      })}
+      onLongPress={() => {
+        setSelectedGroup(item);
+        setShowPasswordModal(true);
+      }}
+    >
+      <Text style={styles.groupName}>{item.name}</Text>
+      <Text style={styles.groupDetails}>
+        Members: {item.members.length} • Photos: {item.photoCount || 0} • Unlocks: {new Date(item.unlockDate).toLocaleDateString()}
+      </Text>
+      <Text style={styles.hint}>Long press to unlock with password</Text>
+    </TouchableOpacity>
+  );
+
+  if (groups.length === 0) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyText}>No current groups</Text>
+        <TouchableOpacity
+          style={styles.createButton}
+          onPress={() => navigation.navigate('CreateGroup')}
+        >
+          <Text style={styles.createButtonText}>Create a Group</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      {showPasswordInput && (
-        <View style={styles.passwordContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter password to unlock"
-            value={password}
-            onChangeText={setPassword}
-            keyboardType="numeric"
-            autoFocus={true}
-          />
-          <Button title="Unlock" onPress={handleUnlock} />
-          <Button title="Cancel" onPress={() => setShowPasswordInput(false)} color="red" />
+      <Modal
+        visible={showPasswordModal}
+        transparent={true}
+        animationType="slide"
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Enter Password to Unlock</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowPasswordModal(false);
+                  setPassword('');
+                }}
+              >
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.unlockButton]}
+                onPress={handleUnlock}
+              >
+                <Text style={styles.buttonText}>Unlock</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
-      )}
+      </Modal>
 
       <FlatList
         data={groups}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity 
-            onPress={() => handleGroupPress(item)}
-            onLongPress={() => handleLongPress(item)}
-            style={styles.groupItem}
-          >
-            <View>
-              <Text style={styles.groupName}>{item.name}</Text>
-              <Text>Unlocks: {new Date(item.unlockDate).toLocaleDateString()}</Text>
-              <Text>Photos: {item.photoCount}</Text>
-              <Text style={styles.hint}>Long press to unlock with password</Text>
-            </View>
-          </TouchableOpacity>
-        )}
+        renderItem={renderGroup}
+        keyExtractor={item => item.id}
+        contentContainerStyle={styles.listContainer}
       />
     </View>
   );
@@ -81,33 +114,103 @@ export default function CurrentGroupsScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  passwordContainer: {
-    padding: 20,
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#ccc',
   },
-  input: {
-    height: 40,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 5,
-    paddingHorizontal: 10,
-    marginBottom: 10,
+  listContainer: {
+    padding: 16,
   },
   groupItem: {
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ccc',
+    backgroundColor: '#f8f8f8',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
   },
   groupName: {
     fontSize: 18,
     fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  groupDetails: {
+    fontSize: 14,
+    color: '#666',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyText: {
+    fontSize: 18,
+    color: '#666',
+    marginBottom: 20,
+  },
+  createButton: {
+    backgroundColor: '#007AFF',
+    padding: 12,
+    borderRadius: 8,
+  },
+  createButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
   },
   hint: {
     fontSize: 12,
     color: '#666',
-    marginTop: 5,
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    width: '80%',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  input: {
+    width: '100%',
+    height: 40,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    marginHorizontal: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#ff3b30',
+  },
+  unlockButton: {
+    backgroundColor: '#007AFF',
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '500',
   },
 }); 

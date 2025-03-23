@@ -6,92 +6,97 @@ export function GroupProvider({ children }) {
   const [groups, setGroups] = useState([]);
   const [unlockedGroups, setUnlockedGroups] = useState([]);
 
-  const addGroup = (newGroup) => {
-    setGroups([...groups, newGroup]);
-  };
-
-  const addPhotoToGroup = (groupId, mediaUri, isVideo = false) => {
+  const addPhotoToGroup = async (groupId, mediaUri, isVideo = false) => {
     const mediaItem = {
       uri: mediaUri,
-      isVideo: isVideo,
+      isVideo,
       id: Date.now().toString(),
       comments: [],
+      timestamp: new Date().toISOString(),
+      isLocked: true
+    };
+
+    const isInCurrent = groups.some(g => g.id === groupId);
+    
+    if (isInCurrent) {
+      setGroups(prevGroups => 
+        prevGroups.map(group => {
+          if (group.id === groupId) {
+            return {
+              ...group,
+              media: [...(group.media || []), mediaItem],
+              photoCount: (group.photoCount || 0) + 1
+            };
+          }
+          return group;
+        })
+      );
+    } else {
+      setUnlockedGroups(prevGroups => 
+        prevGroups.map(group => {
+          if (group.id === groupId) {
+            return {
+              ...group,
+              media: [...(group.media || []), mediaItem],
+              photoCount: (group.photoCount || 0) + 1
+            };
+          }
+          return group;
+        })
+      );
+    }
+  };
+
+  const addComment = (groupId, mediaId, commentText) => {
+    const comment = {
+      id: Date.now().toString(),
+      text: commentText,
       timestamp: new Date().toISOString()
     };
 
     const isInCurrent = groups.some(g => g.id === groupId);
     
     if (isInCurrent) {
-      setGroups(groups.map(group => {
-        if (group.id === groupId) {
-          return {
-            ...group,
-            media: [...(group.media || []), mediaItem],
-            photoCount: (group.photoCount || 0) + 1
-          };
-        }
-        return group;
-      }));
-    } else {
-      setUnlockedGroups(unlockedGroups.map(group => {
-        if (group.id === groupId) {
-          return {
-            ...group,
-            media: [...(group.media || []), mediaItem],
-            photoCount: (group.photoCount || 0) + 1
-          };
-        }
-        return group;
-      }));
-    }
-  };
-
-  const addCommentToMedia = (groupId, mediaId, comment, parentCommentId = null) => {
-    const updateMediaInGroup = (group) => {
-      if (group.id !== groupId) return group;
-      
-      return {
-        ...group,
-        media: group.media.map(m => {
-          if (m.id === mediaId) {
-            if (parentCommentId) {
-              // Add reply to existing comment
-              return {
-                ...m,
-                comments: m.comments.map(c => {
-                  if (c.id === parentCommentId) {
-                    return {
-                      ...c,
-                      replies: [...(c.replies || []), {
-                        id: Date.now().toString(),
-                        ...comment,
-                        timestamp: new Date().toISOString()
-                      }]
-                    };
-                  }
-                  return c;
-                })
-              };
-            } else {
-              // Add new top-level comment
-              return {
-                ...m,
-                comments: [...(m.comments || []), {
-                  id: Date.now().toString(),
-                  ...comment,
-                  timestamp: new Date().toISOString(),
-                  replies: []
-                }]
-              };
-            }
+      setGroups(prevGroups => 
+        prevGroups.map(group => {
+          if (group.id === groupId) {
+            return {
+              ...group,
+              media: group.media.map(item => {
+                if (item.id === mediaId) {
+                  return {
+                    ...item,
+                    comments: [...(item.comments || []), comment]
+                  };
+                }
+                return item;
+              })
+            };
           }
-          return m;
+          return group;
         })
-      };
-    };
-
-    setGroups(groups.map(updateMediaInGroup));
-    setUnlockedGroups(unlockedGroups.map(updateMediaInGroup));
+      );
+    } else {
+      setUnlockedGroups(prevGroups => 
+        prevGroups.map(group => {
+          if (group.id === groupId) {
+            return {
+              ...group,
+              media: group.media.map(item => {
+                if (item.id === mediaId) {
+                  return {
+                    ...item,
+                    comments: [...(item.comments || []), comment]
+                  };
+                }
+                return item;
+              })
+            };
+          }
+          return group;
+        })
+      );
+    }
   };
 
   const unlockGroup = (groupId) => {
@@ -99,27 +104,38 @@ export function GroupProvider({ children }) {
     if (groupToUnlock) {
       const unlockedGroup = {
         ...groupToUnlock,
-        isUnlocked: true
+        isUnlocked: true,
+        media: groupToUnlock.media.map(item => ({
+          ...item,
+          isLocked: false
+        }))
       };
-      setGroups(groups.filter(g => g.id !== groupId));
-      setUnlockedGroups([...unlockedGroups, unlockedGroup]);
+      setGroups(prevGroups => prevGroups.filter(g => g.id !== groupId));
+      setUnlockedGroups(prevGroups => [...prevGroups, unlockedGroup]);
     }
   };
 
+  const addGroup = (newGroup) => {
+    console.log('Adding new group:', newGroup);
+    setGroups(prevGroups => {
+      const updatedGroups = [...prevGroups, newGroup];
+      console.log('Updated groups:', updatedGroups);
+      return updatedGroups;
+    });
+  };
+
   return (
-    <GroupContext.Provider value={{ 
-      groups, 
-      unlockedGroups, 
-      addGroup, 
-      addPhotoToGroup, 
-      addCommentToMedia,
-      unlockGroup 
+    <GroupContext.Provider value={{
+      groups,
+      unlockedGroups,
+      addGroup,
+      addPhotoToGroup,
+      unlockGroup,
+      addComment
     }}>
       {children}
     </GroupContext.Provider>
   );
 }
 
-export function useGroups() {
-  return useContext(GroupContext);
-} 
+export const useGroups = () => useContext(GroupContext); 
